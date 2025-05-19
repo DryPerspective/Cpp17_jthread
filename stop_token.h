@@ -11,7 +11,7 @@ namespace dp{
 
     //NB: All operations on this class must either be
     //protected or atomic. Concurrent access per-instance may occur
-    class stop_state{
+    class stop_state{ 
         std::atomic<bool> m_stop_requested{false};
     public:
         inline bool stop_requested() const noexcept{
@@ -54,8 +54,7 @@ namespace dp{
         }
 
         friend bool operator==(const stop_token& lhs, const stop_token& rhs) noexcept {
-            return lhs.m_state.load(std::memory_order_acquire) 
-                == rhs.m_state.load(std::memory_order_acquire);
+            return lhs.m_state.load() == rhs.m_state.load();
         }
 
 

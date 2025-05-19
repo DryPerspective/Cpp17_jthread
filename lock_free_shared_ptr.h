@@ -20,7 +20,7 @@ namespace dp{
         
         lock_free_shared_ptr() noexcept : m_ptr{nullptr} {}
         lock_free_shared_ptr(std::nullptr_t) noexcept : m_ptr{nullptr} {}
-        explicit lock_free_shared_ptr(std::shared_ptr<T> ptr) : m_ptr{std::move(ptr)} {}
+        explicit lock_free_shared_ptr(std::shared_ptr<T> ptr) noexcept : m_ptr{std::move(ptr)} {}
 
         //seq_cst is heavier but more safe
         lock_free_shared_ptr(const lock_free_shared_ptr& other) : m_ptr{std::atomic_load(&other.m_ptr)} {}
@@ -30,35 +30,48 @@ namespace dp{
             return *this;
         }
 
-        lock_free_shared_ptr(lock_free_shared_ptr&& other) noexcept {
-            //We can't just store the result of std::move(other.m_ptr) as it may result in a data race
-            auto other_ptr = std::atomic_load(&other.m_ptr);
-            store(std::move(other_ptr));
-            other.store(std::shared_ptr<T>{nullptr});
-        }
+        lock_free_shared_ptr(lock_free_shared_ptr&& other) noexcept : m_ptr{std::atomic_exchange_explicit(&other.m_ptr, std::shared_ptr<T>{}, std::memory_order_acq_rel)} {}
         lock_free_shared_ptr& operator=(lock_free_shared_ptr&& other) noexcept{
-            auto other_ptr = std::atomic_load(&other.m_ptr);
-            store(std::move(other_ptr));
-            other.store(std::shared_ptr<T>{nullptr});
+            auto other_ptr = std::atomic_exchange_explicit(&other.m_ptr, std::shared_ptr<T>{}, std::memory_order_acq_rel);
+            std::atomic_store_explicit(&m_ptr, std::move(other_ptr), std::memory_order_release);
             return *this;
+
         }
 
-        ~lock_free_shared_ptr() = default;
-
+        ~lock_free_shared_ptr() noexcept = default;
+        
         void swap(lock_free_shared_ptr& other) noexcept {
-            auto this_old = std::atomic_load_explicit(&m_ptr, std::memory_order_acquire);
-            auto other_old = std::atomic_exchange_explicit(&other.m_ptr, this_old, std::memory_order_acq_rel);
+            if (&other == this) return;
 
-            //Try to store other_old into this->m_ptr only if it's still this_old
-            while (!std::atomic_compare_exchange_weak_explicit(
-                &m_ptr, &this_old, other_old,
-                std::memory_order_acq_rel, std::memory_order_acquire)) {
-                //Failed: m_ptr was changed by another thread. Update this_old and retry.
-                std::atomic_store_explicit(&other.m_ptr, this_old, std::memory_order_release);
-                this_old = std::atomic_load_explicit(&m_ptr, std::memory_order_acquire);
-                other_old = std::atomic_exchange_explicit(&other.m_ptr, this_old, std::memory_order_acq_rel);
+            while (true) {
+                auto this_old  = std::atomic_load_explicit(&m_ptr, std::memory_order_acquire);
+                auto other_old = std::atomic_load_explicit(&other.m_ptr, std::memory_order_acquire);
+
+                auto this_expected  = this_old;
+                auto other_expected = other_old;
+
+                //First try to swap other's pointer to this_old
+                if (!std::atomic_compare_exchange_weak_explicit(
+                        &other.m_ptr, &other_expected, this_old,
+                        std::memory_order_acq_rel, std::memory_order_acquire)) {
+                    continue; // `other` changed, restart with fresh values
+                }
+
+                //Then try to store other_old into this, only if m_ptr is still this_old
+                if (!std::atomic_compare_exchange_weak_explicit(
+                        &m_ptr, &this_expected, other_old,
+                        std::memory_order_acq_rel, std::memory_order_acquire)) {
+                    //Undo the first change: try to restore original to `other`
+                    //If this fails, next loop will sort it out anyway
+                    std::atomic_compare_exchange_weak_explicit(
+                        &other.m_ptr, &this_old, other_old,
+                        std::memory_order_release, std::memory_order_relaxed);
+                    continue; //retry
+                }
+
+                break; //both succeeded
             }
-        }
+}
 
         [[nodiscard]] std::shared_ptr<T> load(std::memory_order order = std::memory_order_seq_cst) const noexcept{
             return std::atomic_load_explicit(&m_ptr, order);
