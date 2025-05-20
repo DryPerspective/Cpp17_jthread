@@ -49,6 +49,10 @@ namespace dp{
             return lhs.m_state.load() == rhs.m_state.load();
         }
 
+        friend void swap(stop_token& lhs, stop_token& rhs) noexcept {
+            lhs.swap(rhs);
+        }
+
 
     };
 
@@ -82,12 +86,15 @@ namespace dp{
             return lhs.m_token == rhs.m_token;
         }
 
+        friend void swap(stop_source& lhs, stop_source& rhs) noexcept {
+            lhs.swap(rhs);
+        }
+
 
 
     };
 
-    void swap(stop_source& lhs, stop_source& rhs) noexcept;
-    void swap(stop_token& lhs, stop_token& rhs) noexcept;
+
 
     
 
@@ -95,16 +102,5 @@ namespace dp{
 }
 
 
-//This is formal UB starting in C++20 but you really should be using std::stop_source in that case
-namespace std{
-    template<>
-    inline void swap(dp::stop_token& lhs, dp::stop_token& rhs) noexcept {
-        lhs.swap(rhs);
-    }
-    template<>
-    inline void swap(dp::stop_source& lhs, dp::stop_source& rhs) noexcept {
-        lhs.swap(rhs);
-    }
-}
 
 #endif

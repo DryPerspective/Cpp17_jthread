@@ -46,13 +46,6 @@ bool stop_source::stop_possible() const noexcept {
     return m_token.stop_possible();
 }
 
-//---FREE FUNCTIONS------------------------------------------------------------------------------------------
-void swap(stop_source& lhs, stop_source& rhs) noexcept {
-    lhs.swap(rhs);
-}
-void swap(stop_token& lhs, stop_token& rhs) noexcept {
-    lhs.swap(rhs);
-}
 
 
 
