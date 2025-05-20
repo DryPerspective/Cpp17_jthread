@@ -86,6 +86,9 @@ namespace dp{
 
     };
 
+    void swap(stop_source& lhs, stop_source& rhs) noexcept;
+    void swap(stop_token& lhs, stop_token& rhs) noexcept;
+
     
 
 
