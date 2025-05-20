@@ -29,7 +29,7 @@ namespace dp{
 
         friend class stop_source;
         
-        explicit stop_token(std::nullptr_t) : m_state{nullptr} {}
+        explicit stop_token(std::nullptr_t) noexcept : m_state{nullptr} {}
 
         public:
         stop_token() : m_state{std::make_shared<stop_state>()} {}
@@ -39,19 +39,11 @@ namespace dp{
         stop_token& operator=(const stop_token&) noexcept = default;
         stop_token& operator=(stop_token&&) noexcept = default;
 
-        void swap(stop_token& other) noexcept{
-            m_state.swap(other.m_state);
-        }
+        void swap(stop_token& other) noexcept;
 
-        [[nodiscard]] bool stop_requested() const noexcept{
-            auto ptr = m_state.load(std::memory_order_acquire);
-            return ptr && ptr->stop_requested();
-        }
+        [[nodiscard]] bool stop_requested() const noexcept;
 
-        [[nodiscard]] bool stop_possible() const noexcept{
-            auto ptr = m_state.load(std::memory_order_acquire);
-            return ptr != nullptr;
-        }
+        [[nodiscard]] bool stop_possible() const noexcept;
 
         friend bool operator==(const stop_token& lhs, const stop_token& rhs) noexcept {
             return lhs.m_state.load() == rhs.m_state.load();
@@ -69,37 +61,22 @@ namespace dp{
         public:
 
         stop_source() : m_token{} {}
-        explicit stop_source(nostopstate_t) : m_token{nullptr} {}
+        explicit stop_source(nostopstate_t) noexcept : m_token{nullptr} {}
         stop_source(const stop_source&) noexcept = default;
         stop_source(stop_source&&) noexcept = default;
 
         stop_source& operator=(const stop_source&) noexcept = default;
         stop_source& operator=(stop_source&&) noexcept = default;
 
-        bool request_stop() noexcept{
-            auto ptr = m_token.m_state.load(std::memory_order_acquire);
-            if(ptr){
-                ptr->request_stop();
-                return true;
-            }
-            return false;             
-        }
+        bool request_stop() noexcept;
 
-        void swap(stop_source& other) noexcept{
-            m_token.swap(other.m_token);
-        }
+        void swap(stop_source& other) noexcept;
 
-        stop_token get_token() const noexcept{
-            return m_token;
-        }
+        stop_token get_token() const noexcept;
 
-        [[nodiscard]] bool stop_requested() const noexcept{
-            return m_token.stop_requested();
-        }
+        [[nodiscard]] bool stop_requested() const noexcept;
 
-        [[nodiscard]] bool stop_possible() const noexcept{
-            return m_token.stop_possible();
-        }
+        [[nodiscard]] bool stop_possible() const noexcept;
 
         friend bool operator==(const stop_source& lhs, const stop_source& rhs) noexcept{
             return lhs.m_token == rhs.m_token;
