@@ -179,9 +179,9 @@ namespace dp{
                 return std::nullopt;
             }
             if (!ptr->stop_requested()) {
-                auto lck{ std::lock_guard{m_token.m_state->m_mut} };
+                auto lck{ std::lock_guard{ptr->m_mut} };
                 if (!ptr->stop_requested()) {
-                    std::size_t this_id{ m_token.m_state->register_callback(std::forward<C>(function)) };
+                    std::size_t this_id{ ptr->register_callback(std::forward<C>(function)) };
                     return this_id;
                 }
                 else {
@@ -212,20 +212,24 @@ namespace dp{
 
         ~stop_callback() noexcept {
             //If the callback is registered
-            //NB: There's no way for the callback to be registered and for the state to have expired
-            //So we don't need to explicitly check for that.
             if (m_callback_id.has_value()) {
+                //We know there's no way for ptr to be null, as were that the case m_callback_id would have no value
+                //So we don't need to check that.
+                auto ptr{ m_token.m_state.load(std::memory_order_acquire) };
                 //We also do the same double-checked locking to ensure it is safely deregistered
                 //or invoked by the calling thread
-                if (!m_token.stop_requested()) {
-                    auto lck{ std::lock_guard{m_token.m_state->m_mut} };
-                    if (!m_token.stop_requested()) {
-                        m_token.m_state->deregister_callback(*m_callback_id);
+                if (!ptr->stop_requested()) {
+                    auto lck{ std::lock_guard{ptr->m_mut} };
+                    if (!ptr->stop_requested()) {
+                        ptr->deregister_callback(*m_callback_id);
                     }
                 }
             }
         }
     };
+
+    template<typename Callback>
+    stop_callback(stop_token, Callback) -> stop_callback<Callback>;
 
 
 
