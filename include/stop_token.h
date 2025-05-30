@@ -3,36 +3,100 @@
 
 #include <atomic>
 #include <memory>
+#include <mutex>
+#include <list>
+#include <functional>
+#include <optional>
 
 #include "lock_free_shared_ptr.h"
 
 namespace dp{
 
+     template<typename Callback>
+     class stop_callback;
 
-    //NB: All operations on this class must either be
-    //protected or atomic. Concurrent access per-instance may occur
-    class stop_state{ 
-        std::atomic<bool> m_stop_requested{false};
-    public:
-        inline bool stop_requested() const noexcept{
-            return m_stop_requested.load(std::memory_order_acquire);
-        }
-        inline void request_stop() noexcept{
-            m_stop_requested.store(true, std::memory_order_release);
-        }
+    namespace detail {
+        //NB: All operations on this class must either be
+        //protected or atomic. Concurrent access per-instance may occur
+        class stop_state {
+            //Stop state is always lock free, because there may be high contention on multiple threads calling while(!stop_requested())
+            //Querying stop state is wait-free, setting stop state may have some waiting if there are callbacks potentially being set.
+            std::atomic<bool> m_stop_requested{ false };
 
-    };
+
+            //Callbacks would be lock-free in an ideal world, however contention here should be lower than querying stop state
+            //For now at least, we use a traditional lock to prevent a whole family of possible races and errors from occurring.
+            class callback_state {
+                std::size_t m_id;
+                std::function<void()> m_callable;
+
+            public:
+                //In principle, the only users of this class should already have asserted that Func is callable with the right signature
+                //So constraining it here is extra work for minimal gain
+                template<typename Func>
+                callback_state(std::size_t id, Func&& func) : m_id{ id }, m_callable{ std::forward<Func>(func) } {}
+
+                inline void operator()() const {
+                    std::invoke(m_callable);
+                }
+
+                inline std::size_t id() const {
+                    return m_id;
+                }
+            };
+
+
+            //Callback state variables
+            std::size_t m_current_callback_id{ 0 };
+            std::mutex m_mut{};
+            std::list<callback_state> m_callbacks{};
+
+            template<typename Callback>
+            friend class dp::stop_callback;
+
+            //A note to users - these functions are private for a reason and unprotected for a reason.
+            //The way that we prevent races when registering and deregistering a callback is via double-checked locking.
+            //As such, the callback functions which are using these functions must already hold the lock to protect the list.
+            //So we can't also acquire the lock here otherwise it's deadlock
+            template<typename Func>
+            std::size_t register_callback(Func&& func) {
+                auto this_id{ m_current_callback_id++ };
+                m_callbacks.emplace_back(this_id, std::forward<Func>(func));
+                return this_id;
+            }
+
+            void deregister_callback(std::size_t id);
+
+            void execute_callbacks();           
+
+
+        public:
+            inline bool stop_requested() const noexcept {
+                return m_stop_requested.load(std::memory_order_acquire);
+            }
+            inline void request_stop() noexcept {
+                m_stop_requested.store(true, std::memory_order_release);
+
+                auto lck{ std::lock_guard{m_mut} };
+                execute_callbacks();
+            }
+
+        };
+
+    }
 
     class stop_token{
 
-        dp::lock_free_shared_ptr<stop_state> m_state;
+        dp::lock_free_shared_ptr<detail::stop_state> m_state;
 
         friend class stop_source;
+        template<typename Callback>
+        friend class stop_callback;
         
         explicit stop_token(std::nullptr_t) noexcept : m_state{nullptr} {}
 
         public:
-        stop_token() : m_state{std::make_shared<stop_state>()} {}
+        stop_token() : m_state{std::make_shared<detail::stop_state>()} {}
         stop_token(const stop_token&) noexcept = default;
         stop_token(stop_token&&) noexcept = default;
         
@@ -92,6 +156,75 @@ namespace dp{
 
 
 
+    };
+
+    template<typename Callback>
+    class stop_callback {
+
+        static_assert(std::is_invocable_v<Callback>, "Callback given to stop_callback is not invocable with no parameters");
+        static_assert(std::is_destructible_v<Callback>, "Callback given to stop_callback is not destructible");
+
+        dp::stop_token m_token;
+        std::optional<std::size_t> m_callback_id;
+        
+
+        //DRY from our near-duplicate constructors
+        template<typename C>
+        std::optional<std::size_t> register_or_invoke(C&& function) {
+            static_assert(std::is_constructible_v<Callback, C>, "Callback is not constructible from provided argument types");
+            //We do double-checked locking to ensure we don't race with another thread potentially executing all registered callbacks
+            auto ptr{ m_token.m_state.load(std::memory_order_acquire) };
+            if (!ptr) {
+                std::invoke(std::forward<C>(function));
+                return std::nullopt;
+            }
+            if (!ptr->stop_requested()) {
+                auto lck{ std::lock_guard{m_token.m_state->m_mut} };
+                if (!ptr->stop_requested()) {
+                    std::size_t this_id{ m_token.m_state->register_callback(std::forward<C>(function)) };
+                    return this_id;
+                }
+                else {
+                    std::invoke(std::forward<C>(function));
+                    return std::nullopt;
+                }
+            }
+            else {
+                std::invoke(std::forward<C>(function));
+                return std::nullopt;
+            }
+        }
+
+    public:
+
+        template<typename C>
+        explicit stop_callback(const dp::stop_token& tok, C&& func) noexcept(std::is_nothrow_constructible_v<Callback, C>)
+            : m_token{ tok }, m_callback_id{ register_or_invoke(std::forward<C>(func)) } {}
+
+        template<typename C>
+        explicit stop_callback(dp::stop_token&& tok, C&& func) noexcept(std::is_nothrow_constructible_v<Callback, C>)
+            : m_token{ std::move(tok) }, m_callback_id{ register_or_invoke(std::forward<C>(func)) } {}
+
+        stop_callback(const stop_callback&) = delete;
+        stop_callback& operator=(const stop_callback&) = delete;
+        stop_callback(stop_callback&&) = delete;
+        stop_callback& operator=(stop_callback&&) = delete;
+
+        ~stop_callback() noexcept {
+            //If the callback is registered
+            //NB: There's no way for the callback to be registered and for the state to have expired
+            //So we don't need to explicitly check for that.
+            if (m_callback_id.has_value()) {
+                //We also do the same double-checked locking to ensure it is safely deregistered
+                //or invoked by the calling thread
+                if (!m_token.stop_requested()) {
+                    auto lck{ std::lock_guard{m_token.m_state->m_mut} };
+                    if (!m_token.stop_requested()) {
+                        m_token.m_state->deregister_callback(*m_callback_id);
+                    }
+                }
+            }
+        }
     };
 
 

@@ -2,6 +2,23 @@
 
 namespace dp {
 
+namespace detail {
+
+//---STOP-STATE-------------------------------------------------
+void stop_state::deregister_callback(std::size_t id) {
+    m_callbacks.remove_if([id](callback_state& state) {return state.id() == id; });
+}
+
+void stop_state::execute_callbacks() {
+    for (auto& callback : m_callbacks) {
+        std::invoke(callback);
+    }
+    m_callbacks.clear();
+}
+
+
+}
+
 //---STOP TOKEN-------------------------------------------------
 
 void stop_token::swap(stop_token& other) noexcept {
