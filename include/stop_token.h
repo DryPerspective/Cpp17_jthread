@@ -172,12 +172,13 @@ namespace dp{
         template<typename C>
         std::optional<std::size_t> register_or_invoke(C&& function) {
             static_assert(std::is_constructible_v<Callback, C>, "Callback is not constructible from provided argument types");
-            //We do double-checked locking to ensure we don't race with another thread potentially executing all registered callbacks
-            auto ptr{ m_token.m_state.load(std::memory_order_acquire) };
-            if (!ptr) {
+            //We check if the token holds a null ptr. Note that if it doesn't here it can't be changed to do so later so we don't need to manage that manually here
+            if (!m_token.stop_possible()) {
                 std::invoke(std::forward<C>(function));
                 return std::nullopt;
             }
+            //We do double-checked locking to ensure we don't race with another thread potentially executing all registered callbacks
+            auto ptr{ m_token.m_state.load(std::memory_order_acquire) };
             if (!ptr->stop_requested()) {
                 auto lck{ std::lock_guard{ptr->m_mut} };
                 if (!ptr->stop_requested()) {
