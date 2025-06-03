@@ -113,6 +113,10 @@ namespace dp{
             return lhs.m_state.load() == rhs.m_state.load();
         }
 
+        friend bool operator!=(const stop_token& lhs, const stop_token& rhs) noexcept {
+            return !(lhs == rhs);
+        }
+
         friend void swap(stop_token& lhs, stop_token& rhs) noexcept {
             lhs.swap(rhs);
         }
@@ -148,6 +152,10 @@ namespace dp{
 
         friend bool operator==(const stop_source& lhs, const stop_source& rhs) noexcept{
             return lhs.m_token == rhs.m_token;
+        }
+
+        friend bool operator!=(const stop_source& lhs, const stop_source& rhs) noexcept {
+            return !(lhs == rhs);
         }
 
         friend void swap(stop_source& lhs, stop_source& rhs) noexcept {
