@@ -46,17 +46,13 @@ int main(){
 And condition variables can wait on and be notified when a stop is requested
 
 ```cpp
-void some_thread_function(dp::condition_variable_any& cond, dp::stop_token token){
-
-	perform_setup();
-	shared_progress_marker.store(true);
-
-	//Will be notified either by a call to notify on the condvar, or a stop request on the source associated with the token
-	cond.wait(shared_lock, token, [&progress_marker]{return shared_progress_marker.load() == false;})
-
-	if(token.stop_requested()) return;
-
-	perform_next_calculation();
+void thread_safe_queue::pop(T& out_value){
+	auto lck{ std::unique_lock{m_mutex} };
+	//Will be notified either from a call to notify_all() in push(), or a request to stop on the stop_token.
+	m_condvar.wait(lck, m_stop_token, [this]() {return !m_dat.empty(); });
+	if(m_stop_token.stop_requested()) return;
+        in_val = std::move(m_dat.front());
+        m_dat.pop();
 }
 ```
 
