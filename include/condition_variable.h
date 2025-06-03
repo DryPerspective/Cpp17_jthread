@@ -20,6 +20,7 @@ namespace dp {
 	//For the sake of consistency when swapping between regular condition_variables and *_any we make condition_variable findable here
 	using std::condition_variable;
 	using std::cv_status;
+	using std::notify_all_at_thread_exit;
 
 
 
