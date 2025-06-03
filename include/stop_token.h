@@ -206,6 +206,8 @@ namespace dp{
 
     public:
 
+        using callback_type = Callback;
+
         template<typename C>
         explicit stop_callback(const dp::stop_token& tok, C&& func) noexcept(std::is_nothrow_constructible_v<Callback, C>)
             : m_token{ tok }, m_callback_id{ register_or_invoke(std::forward<C>(func)) } {}
