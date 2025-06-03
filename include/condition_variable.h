@@ -3,6 +3,8 @@
 
 /*
 *	An implementation for condition_variable_any which is able to be notified by a dp::stop_token
+* 
+*	Full documentation found at: https://github.com/DryPerspective/Cpp17_jthread/wiki/condition_variable
 *
 */
 #include <mutex>

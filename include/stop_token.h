@@ -10,6 +10,15 @@
 
 #include "lock_free_shared_ptr.h"
 
+
+/*
+*  Classes to safely manage requested stop state across threads, and execute callbacks when a stop is requested. Mirrors the standard library equivalent from C++20.
+* 
+*  Full documentation at: https://github.com/DryPerspective/Cpp17_jthread/wiki/stop_source-and-stop_token
+*                    and: https://github.com/DryPerspective/Cpp17_jthread/wiki/stop_callback
+*/
+
+
 namespace dp{
 
      template<typename Callback>

@@ -5,6 +5,8 @@
 //Note that we follow the standard behaviour and do not impose synchronisation on the jthread object itself. 
 //Your code could cause it to race if not protected
 
+//Full documentation is found at: https://github.com/DryPerspective/Cpp17_jthread/wiki/jthread
+
 #include <thread>
 #include <type_traits>
 #include "stop_token.h"
