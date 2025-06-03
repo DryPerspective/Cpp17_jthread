@@ -71,7 +71,7 @@ namespace dp{
 
                 break; //both succeeded
             }
-}
+        }
 
         [[nodiscard]] std::shared_ptr<T> load(std::memory_order order = std::memory_order_seq_cst) const noexcept{
             return std::atomic_load_explicit(&m_ptr, order);
