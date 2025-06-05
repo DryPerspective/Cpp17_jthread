@@ -27,7 +27,6 @@ namespace dp::thread_safe {
 		std::queue<T, Container> m_queue{};
 		mutable std::mutex m_mut{};
 		
-		dp::stop_token m_token;
 		dp::condition_variable_any m_cond{};
 
 	public:
@@ -42,13 +41,12 @@ namespace dp::thread_safe {
 		template<typename T>
 		using out_parameter = T&;
 
-		explicit queue(dp::stop_token tok) : m_token{ std::move(tok) } {}
-		explicit queue(dp::stop_token tok, queue_type in_queue) : m_queue{ std::move(in_queue) }, m_token{ std::move(tok) } {}
+		explicit queue() = default;
+		explicit queue(queue_type in_queue) : m_queue{ std::move(in_queue) } {}
 
 		queue(const queue& other) {
 			std::lock_guard lck{ other.m_mut };
 			m_queue = other.m_queue;
-			m_token = other.m_token;
 		}
 
 		queue& operator=(const queue& other) {
@@ -62,12 +60,10 @@ namespace dp::thread_safe {
 		queue(queue&& other) {
 			std::lock_guard lck{ other.m_mut };
 			m_queue = std::move(other.m_queue);
-			m_token = std::move(other.m_token);
 		}
 		queue& operator=(queue&& other) {
 			std::scoped_lock lck{ m_mut, other.m_mut };
-			m_queue = std::move(other.m_queue);
-			m_token = std::move(other.m_token);
+			m_queue = std::move(other.m_queue);;
 			return *this;
 		}
 
@@ -75,8 +71,7 @@ namespace dp::thread_safe {
 		void swap(queue& other) noexcept {
 			if (this == &other) return;
 			std::scoped_lock lck{ m_mut, other.m_mut };
-			swap(m_queue, other.m_queue);
-			swap(m_token, other.m_token);			
+			swap(m_queue, other.m_queue);			
 		}
 
 		bool empty() const {
@@ -108,13 +103,23 @@ namespace dp::thread_safe {
 			return true;
 		}
 
+
+
 		//wait_pop will wait until there is an element in the queue to pop.
-		//The thread will sleep if there is no value and be woken when a call to push() notifies it,
-		//or when a stop is requested on the stop token
+		//The thread will sleep if there is no value and be woken when a call to push() notifies it
 		void wait_pop(T& out_parameter) {
 			std::unique_lock lck{ m_mut };
-			m_cond.wait(lck, m_token, [this] {return !m_queue.empty(); });
-			if (m_token.stop_requested()) return;
+			m_cond.wait(lck, [this] {return !m_queue.empty(); });
+
+			out_parameter = std::move(m_queue.front());
+			m_queue.pop();
+		}
+		
+		//Overload to wake when a stop is requested on the stop token
+		void wait_pop(dp::stop_token token, T& out_parameter) {
+			std::unique_lock lck{ m_mut };
+			m_cond.wait(lck, token, [this] {return !m_queue.empty(); });
+			if (token.stop_requested()) return;
 
 			out_parameter = std::move(m_queue.front());
 			m_queue.pop();
@@ -128,7 +133,7 @@ namespace dp::thread_safe {
 	};
 
 	template<typename T, typename Container>
-	queue(dp::stop_token, std::queue<T, Container>) -> queue<T, Container>;
+	queue(std::queue<T, Container>) -> queue<T, Container>;
 
 
 
