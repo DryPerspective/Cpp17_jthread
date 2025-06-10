@@ -125,7 +125,7 @@ namespace dp {
 			std::unique_lock outer_lock{ *mut };
 			scoped_unlock param_unlock{ lock };
 			std::unique_lock inner_lock{ std::move(outer_lock) };
-			m_cond.wait_until(inner_lock, end_time);
+			return m_cond.wait_until(inner_lock, end_time);
 		}
 
 		template<typename Lock, typename Clock, typename Duration, typename Pred>
